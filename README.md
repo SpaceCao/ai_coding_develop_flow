@@ -761,3 +761,143 @@ cp .env.example .env
 - 方案确认人固定为技术负责人
 - 审批人固定为上线责任人
 - 多维表格按迭代字段做周会和复盘视图
+
+## 联调排障指南
+
+### 1. 飞书收不到 Bot 响应
+
+排查顺序：
+
+1. 确认 Bot 已被拉入目标群聊
+2. 确认飞书开放平台已开启事件订阅
+3. 确认回调地址 `http(s)://<your-host>/feishu/event` 可公网访问
+4. 查看 FastAPI 日志中是否收到 `im.message.receive_v1`
+5. 检查 `FEISHU_APP_ID`、`FEISHU_APP_SECRET` 是否填写正确
+
+### 2. 飞书卡片按钮点击没反应
+
+排查顺序：
+
+1. 确认飞书卡片回调地址配置正确
+2. 确认卡片回调地址与事件订阅地址一致
+3. 查看服务日志是否收到 `card.action.trigger`
+4. 检查卡片 `action.value` 中是否包含 `task_id`
+5. 检查对应任务是否仍处于 `方案待确认` 状态
+
+关键代码位置：
+- `app/api/feishu_events.py:84`
+- `app/services/pipeline.py:122`
+
+### 3. 多维表格没有写入记录
+
+排查顺序：
+
+1. 确认 `FEISHU_BITABLE_APP_TOKEN` 是否正确
+2. 确认 `FEISHU_BITABLE_TABLE_ID` 是否正确
+3. 确认表结构已通过 `scripts/init_bitable.py` 初始化
+4. 查看日志中是否有飞书开放接口报错
+5. 确认应用是否具备多维表格写权限
+
+关键代码位置：
+- `app/services/feishu_bitable.py`
+- `app/services/pipeline.py:63`
+
+### 4. 技术方案文档没有生成
+
+排查顺序：
+
+1. 确认 `FEISHU_DOC_FOLDER_TOKEN` 是否正确
+2. 确认应用是否具备云文档写入权限
+3. 查看 `create_and_write_doc` 调用日志
+4. 检查 AI 是否确实返回了技术方案内容
+
+关键代码位置：
+- `app/services/feishu_doc.py`
+- `app/services/pipeline.py:90`
+
+### 5. 确认方案后没有创建 PR
+
+排查顺序：
+
+1. 确认 Celery worker 是否已启动
+2. 确认 Redis 是否可连接
+3. 确认 `GITHUB_TOKEN` 是否具备 repo 写权限
+4. 确认 `GITHUB_REPO` 填写为 `owner/repo`
+5. 检查 AI 代码生成结果是否包含 `filepath:` 代码块
+
+关键代码位置：
+- `app/services/pipeline.py:132`
+- `app/tasks/coding_tasks.py`
+- `app/services/github_service.py`
+
+### 6. PR 已创建但没有触发 AI 审查
+
+排查顺序：
+
+1. 确认 GitHub Webhook 已配置 `Pull requests`
+2. 确认 GitHub Webhook Secret 与 `.env` 一致
+3. 确认 `/github/webhook` 可公网访问
+4. 查看 FastAPI 日志是否收到 `pull_request opened` 事件
+5. 确认 `trigger_review` 是否成功调用
+
+关键代码位置：
+- `app/api/webhooks.py`
+- `app/services/pipeline.py:142`
+- `app/tasks/review_tasks.py`
+
+### 7. 审查报告文档没有生成
+
+排查顺序：
+
+1. 确认 `FEISHU_DOC_FOLDER_TOKEN` 是否有效
+2. 确认飞书应用具备文档写入权限
+3. 检查 AI 审查结果是否正常返回
+4. 查看 `review_tasks` 日志是否在写文档阶段报错
+
+关键代码位置：
+- `app/tasks/review_tasks.py:63`
+- `app/services/feishu_doc.py`
+
+### 8. 飞书审批没有发起
+
+排查顺序：
+
+1. 确认 AI 审查结论是否为通过
+2. 确认 `FEISHU_APPROVAL_CODE` 是否正确
+3. 确认审批定义中允许对应发起人发起审批
+4. 确认消息发送人的 `open_id` 能正确取到
+5. 查看审批接口返回值和日志
+
+关键代码位置：
+- `app/tasks/review_tasks.py:84`
+- `app/services/feishu_approval.py`
+
+### 9. 部署状态没有回填
+
+排查顺序：
+
+1. 确认 GitHub Actions 实际有运行
+2. 确认 GitHub Webhook 已订阅 `Workflow runs`
+3. 确认 `/github/webhook` 可公网访问
+4. 查看 `workflow_run` 事件是否到达服务
+5. 确认多维表格更新调用是否成功
+
+关键代码位置：
+- `app/api/webhooks.py`
+- `app/tasks/deploy_tasks.py`
+
+### 10. `docker compose` 启动失败
+
+常见原因：
+
+- `.env` 文件不存在
+- 环境变量未填写完整
+- 本机 6379 或 8000 端口被占用
+- Docker Desktop / Docker Engine 未启动
+
+建议先执行：
+
+```bash
+cp .env.example .env
+docker compose config
+```
