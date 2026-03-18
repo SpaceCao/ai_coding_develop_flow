@@ -6,3 +6,5 @@ __pycache__/
 dist/
 build/
 .ruff_cache/
+.idea/
+.omc/
